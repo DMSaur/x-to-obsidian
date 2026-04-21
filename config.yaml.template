@@ -1,0 +1,22 @@
+# X to Obsidian Bot 配置文件模板
+# 请复制为 config.yaml 并填入实际值
+
+feishu:
+  app_id: "cli_xxx"            # 飞书应用 App ID
+  app_secret: "xxx"            # 飞书应用 App Secret
+  verification_token: "xxx"    # 事件订阅验证 token
+  encrypt_key: ""              # 事件加密 key（可选）
+
+obsidian:
+  vault_path: "/Users/xxx/Documents/Obsidian Vault"
+  clippings_folder: "X-Clippings"
+  attachments_folder: "attachments"
+
+claude:
+  api_key: ""                  # DashScope API Key
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  model: "qwen3.5-plus"
+
+server:
+  host: "0.0.0.0"
+  port: 9090
