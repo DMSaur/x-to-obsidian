@@ -46,35 +46,64 @@ def extract_tweet_playwright(url: str) -> dict | None:
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            # 启动 Chromium（添加反检测参数）
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-blink-features=AutomationControlled",
+                ]
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
 
-            # 设置较长的超时（X 页面加载慢）
-            page.set_default_timeout(30000)
+            # 增加超时到 60 秒
+            page.set_default_timeout(60000)
 
-            # 访问推文页面
-            page.goto(url, wait_until="networkidle")
+            # 访问推文页面（使用 domcontentloaded 而非 networkidle）
+            logger.info(f"Playwright 正在访问: {url}")
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
-            # 等待推文内容加载
-            page.wait_for_selector('[data-testid="tweet"]', timeout=15000)
+            # 等待推文内容加载（增加超时）
+            logger.info("等待推文内容...")
+            try:
+                page.wait_for_selector('[data-testid="tweet"]', timeout=30000)
+            except PlaywrightTimeout:
+                # 尝试备用选择器
+                page.wait_for_selector('article', timeout=15000)
 
             # 提取推文文本
             tweet_text = ""
             try:
-                text_element = page.locator('[data-testid="tweetText"]')
-                tweet_text = text_element.inner_text()
-            except Exception:
-                pass
+                # 尝试多个选择器
+                for selector in ['[data-testid="tweetText"]', 'div[data-testid="tweet"] div[dir="auto"]', 'article div[dir="auto"]']:
+                    try:
+                        text_element = page.locator(selector).first
+                        if text_element.count() > 0:
+                            tweet_text = text_element.inner_text(timeout=5000)
+                            if tweet_text:
+                                break
+                    except Exception:
+                        continue
+            except Exception as e:
+                logger.warning(f"提取文本失败: {e}")
 
             # 提取作者信息
             author_name = ""
             author_handle = ""
             try:
-                author_name = page.locator('[data-testid="User-Name"] span').first.inner_text()
-                handle_element = page.locator('[data-testid="User-Name"] a').first
-                author_handle = handle_element.inner_text()
-            except Exception:
-                pass
+                # 尝试多种方式获取作者
+                user_link = page.locator('a[href*="/LinQingV"]').first
+                if user_link.count() > 0:
+                    author_handle = "@LinQingV"
+                spans = page.locator('[data-testid="User-Name"] span').all()
+                if spans:
+                    author_name = spans[0].inner_text() if len(spans) > 0 else ""
+            except Exception as e:
+                logger.warning(f"提取作者失败: {e}")
 
             # 提取图片
             images = []
