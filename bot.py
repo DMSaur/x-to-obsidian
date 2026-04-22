@@ -280,7 +280,6 @@ async def debug_xreach():
     import subprocess
     import shutil
 
-    # 检查 xreach 是否安装
     xreach_path = shutil.which("xreach") or "xreach"
 
     try:
@@ -297,6 +296,42 @@ async def debug_xreach():
         }
     except Exception as e:
         return {"xreach_path": xreach_path, "error": str(e)}
+
+
+@app.get("/debug/thread")
+async def debug_thread():
+    """调试端点：测试 xreach thread 命令提取评论"""
+    import subprocess
+    import json as json_lib
+    import shutil
+
+    xreach_path = shutil.which("xreach") or "xreach"
+    tweet_id = "2046487761763631405"
+
+    try:
+        result = subprocess.run(
+            [xreach_path, "thread", tweet_id, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        if result.returncode != 0:
+            return {
+                "error": result.stderr,
+                "stdout": result.stdout[:500],
+            }
+
+        data = json_lib.loads(result.stdout)
+        replies = [item for item in data if item.get("id") != tweet_id]
+
+        return {
+            "total_items": len(data),
+            "replies_count": len(replies),
+            "sample_replies": replies[:3] if replies else [],
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 
 if __name__ == "__main__":
