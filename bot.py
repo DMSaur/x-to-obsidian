@@ -12,7 +12,7 @@ from lark_oapi.api.im.v1 import *
 from extractor import extract_tweet, extract_replies, is_x_url
 from summarizer import summarize_tweet
 from writer import write_note
-from feishu_writer import save_to_feishu_wiki
+from feishu_writer import save_to_feishu_doc
 
 logging.basicConfig(
     level=logging.INFO,
@@ -162,22 +162,17 @@ def process_x_url(url: str, retry_count: int = 0, max_retries: int = 3) -> str:
     if not filepath:
         return "❌ 写入 Obsidian 失败。"
 
-    # 5. 保存到飞书 Wiki（可选）
+    # 5. 保存到飞书文档（存到个人文档空间）
     feishu_result = ""
-    wiki_space_id = FEISHU.get("wiki_space_id", "")
-    if wiki_space_id:
-        logger.info("正在保存到飞书 Wiki...")
-        wiki_url = save_to_feishu_wiki(
-            client,
-            wiki_space_id,
-            summary.get("title", "推文摘要"),
-            "",  # content
-            tweet,
-            summary,
-            replies,
-        )
-        if wiki_url:
-            feishu_result = f"\n📚 飞书 Wiki: {wiki_url}"
+    logger.info("正在保存到飞书...")
+    doc_url = save_to_feishu_doc(
+        client,
+        summary.get("title", "推文摘要"),
+        tweet,
+        summary,
+    )
+    if doc_url:
+        feishu_result = f"\n📚 飞书文档: {doc_url}"
 
     tags_str = " ".join(f"#{t}" for t in summary.get("tags", []))
     replies_info = f"💬 {len(replies)}条评论" if replies else ""
@@ -266,97 +261,24 @@ async def health():
 
 @app.get("/debug/env")
 async def debug_env():
-    """调试端点：检查环境变量配置"""
     return {
-        "wiki_space_id": FEISHU.get("wiki_space_id", ""),
         "app_id_set": bool(FEISHU.get("app_id")),
         "app_secret_set": bool(FEISHU.get("app_secret")),
     }
 
 
-@app.get("/debug/wiki")
-async def debug_wiki():
-    """调试端点：测试 MoveDocsToWiki API"""
-    from feishu_writer import save_to_feishu_wiki
+@app.get("/debug/doc")
+async def debug_doc():
+    """测试创建飞书文档"""
+    from feishu_writer import save_to_feishu_doc
 
-    test_tweet = {
-        "text": "测试推文内容",
-        "url": "https://x.com/test/status/123",
-    }
-    test_summary = {
-        "title": "测试文档",
-        "summary_zh": "这是一个测试",
-        "tags": ["test"],
-    }
-
-    result = save_to_feishu_wiki(
+    result = save_to_feishu_doc(
         client,
-        FEISHU.get("wiki_space_id", ""),
-        "API测试文档",
-        "",
-        test_tweet,
-        test_summary,
-        [],
+        "测试文档",
+        {"text": "这是测试内容", "url": "https://x.com/test/status/123"},
+        {"summary_zh": "测试摘要", "tags": ["test"]},
     )
-
-    return {"result": result, "wiki_space_id": FEISHU.get("wiki_space_id", "")}
-
-
-@app.get("/debug/wiki/info")
-async def debug_wiki_info():
-    """调试端点：获取 Wiki 信息和正确的 space_id"""
-    from lark_oapi.api.wiki.v2 import GetSpaceRequest
-
-    wiki_token = FEISHU.get("wiki_space_id", "")
-
-    # 尝试获取 Wiki 空间信息
-    req = GetSpaceRequest.builder() \
-        .space_id(wiki_token) \
-        .build()
-
-    resp = client.wiki.v2.space.get(req)
-
-    return {
-        "wiki_token": wiki_token,
-        "success": resp.success(),
-        "code": resp.code,
-        "msg": resp.msg,
-        "data": str(resp.data) if resp.data else None,
-    }
-
-
-@app.get("/debug/wiki/list")
-async def debug_wiki_list():
-    """调试端点：列出所有 Wiki 空间，找到正确的 space_id"""
-    from lark_oapi.api.wiki.v2 import ListSpaceRequest
-
-    req = ListSpaceRequest.builder() \
-        .page_size(20) \
-        .build()
-
-    resp = client.wiki.v2.space.list(req)
-
-    if not resp.success():
-        return {
-            "success": False,
-            "code": resp.code,
-            "msg": resp.msg,
-        }
-
-    spaces = []
-    if resp.data and resp.data.items:
-        for item in resp.data.items:
-            spaces.append({
-                "space_id": item.space.id if hasattr(item, 'space') and hasattr(item.space, 'id') else str(item),
-                "name": item.space.name if hasattr(item, 'space') and hasattr(item.space, 'name') else "",
-                "token": getattr(item, 'token', '') if hasattr(item, 'token') else "",
-            })
-
-    return {
-        "success": True,
-        "count": len(spaces),
-        "spaces": spaces,
-    }
+    return {"result": result}
 
 
 if __name__ == "__main__":
