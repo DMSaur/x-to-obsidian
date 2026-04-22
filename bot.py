@@ -302,6 +302,29 @@ async def debug_wiki():
     return {"result": result, "wiki_space_id": FEISHU.get("wiki_space_id", "")}
 
 
+@app.get("/debug/wiki/info")
+async def debug_wiki_info():
+    """调试端点：获取 Wiki 信息和正确的 space_id"""
+    from lark_oapi.api.wiki.v2 import GetSpaceRequest
+
+    wiki_token = FEISHU.get("wiki_space_id", "")
+
+    # 尝试获取 Wiki 空间信息
+    req = GetSpaceRequest.builder() \
+        .space_id(wiki_token) \
+        .build()
+
+    resp = client.wiki.v2.space.get(req)
+
+    return {
+        "wiki_token": wiki_token,
+        "success": resp.success(),
+        "code": resp.code,
+        "msg": resp.msg,
+        "data": str(resp.data) if resp.data else None,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
