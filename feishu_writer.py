@@ -77,7 +77,7 @@ def save_to_feishu_wiki(
                 .request_body(MoveDocsToWikiSpaceNodeRequestBody.builder()
                              .obj_type("docx")
                              .obj_token(doc_id)
-                             .parent_node_token("")
+                             .parent_wiki_token("")  # 正确的字段名
                              .build()) \
                 .build()
 
