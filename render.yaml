@@ -1,13 +1,10 @@
 services:
   - type: web
     name: x-to-obsidian
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    env: docker
+    # Dockerfile 方式部署（包含 Python + Node.js + xreach）
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.11
       - key: NODE_VERSION
         value: 18
-    # Pre-install Node.js via shell command
-    preDeployCommand: curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && apt-get install -y nodejs && npm install -g xreach
