@@ -274,6 +274,22 @@ async def debug_env():
     }
 
 
+@app.get("/debug/playwright")
+async def debug_playwright():
+    """调试端点：检查 Playwright 是否可用"""
+    try:
+        from extractor import HAS_PLAYWRIGHT, extract_replies
+        test_url = "https://x.com/LinQingV/status/2046487761763631405"
+        replies = extract_replies(test_url, max_replies=5)
+        return {
+            "has_playwright": HAS_PLAYWRIGHT,
+            "replies_count": len(replies),
+            "replies": replies[:3] if replies else [],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
 
