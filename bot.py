@@ -274,20 +274,29 @@ async def debug_env():
     }
 
 
-@app.get("/debug/playwright")
-async def debug_playwright():
-    """调试端点：检查 Playwright 是否可用"""
+@app.get("/debug/xreach")
+async def debug_xreach():
+    """调试端点：测试 xreach CLI"""
+    import subprocess
+    import shutil
+
+    # 检查 xreach 是否安装
+    xreach_path = shutil.which("xreach") or "xreach"
+
     try:
-        from extractor import HAS_PLAYWRIGHT, extract_replies
-        test_url = "https://x.com/LinQingV/status/2046487761763631405"
-        replies = extract_replies(test_url, max_replies=5)
+        result = subprocess.run(
+            [xreach_path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
         return {
-            "has_playwright": HAS_PLAYWRIGHT,
-            "replies_count": len(replies),
-            "replies": replies[:3] if replies else [],
+            "xreach_path": xreach_path,
+            "installed": result.returncode == 0,
+            "version": result.stdout.strip() if result.returncode == 0 else result.stderr,
         }
     except Exception as e:
-        return {"error": str(e)}
+        return {"xreach_path": xreach_path, "error": str(e)}
 
 
 if __name__ == "__main__":
