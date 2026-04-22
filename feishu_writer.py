@@ -1,6 +1,7 @@
 """飞书文档保存模块"""
 
 import logging
+import os
 
 from lark_oapi.api.docx.v1 import (
     CreateDocumentRequest,
@@ -9,11 +10,18 @@ from lark_oapi.api.docx.v1 import (
     CreateDocumentBlockChildrenRequestBody,
     GetDocumentBlockRequest,
 )
+from lark_oapi.api.drive.v1 import (
+    BatchCreatePermissionMemberRequest,
+    BatchCreatePermissionMemberRequestBody,
+)
 
 logger = logging.getLogger(__name__)
 
 BLOCK_TYPE_TEXT = 2
 BLOCK_TYPE_HEADING2 = 4
+
+# 你的飞书 open_id（用于分享权限）- 从环境变量读取
+USER_OPEN_ID = os.environ.get("FEISHU_USER_OPEN_ID", "")
 
 
 def create_heading2(text: str) -> dict:
@@ -24,8 +32,38 @@ def create_text(text: str) -> dict:
     return {"block_type": BLOCK_TYPE_TEXT, "text": {"elements": [{"text_run": {"content": text}}]}}
 
 
+def share_document_to_user(client, doc_token: str, user_open_id: str) -> bool:
+    """分享文档给指定用户（可编辑权限）"""
+    try:
+        req = BatchCreatePermissionMemberRequest.builder() \
+            .token(doc_token) \
+            .type("docx") \
+            .need_notification(True) \
+            .request_body(BatchCreatePermissionMemberRequestBody.builder()
+                         .members([{
+                             "member_type": "openid",
+                             "member_id": user_open_id,
+                             "perm": "full_access",
+                         }])
+                         .build()) \
+            .build()
+
+        resp = client.drive.v1.permission_member.batch_create(req)
+
+        if resp.success():
+            logger.info(f"文档已分享给用户: {user_open_id}")
+            return True
+        else:
+            logger.warning(f"分享文档失败: code={resp.code}, msg={resp.msg}")
+            return False
+
+    except Exception as e:
+        logger.error(f"分享文档异常: {e}")
+        return False
+
+
 def save_to_feishu_doc(client, title: str, tweet_data: dict, summary_data: dict) -> str | None:
-    """创建飞书文档，存到个人文档空间（你是 owner，可管理删除）"""
+    """创建飞书文档，存到个人文档空间，并分享给你"""
     try:
         logger.info("正在创建飞书文档...")
 
@@ -44,6 +82,9 @@ def save_to_feishu_doc(client, title: str, tweet_data: dict, summary_data: dict)
 
         write_document_content(client, doc_id, tweet_data, summary_data)
 
+        if USER_OPEN_ID:
+            share_document_to_user(client, doc_id, USER_OPEN_ID)
+
         doc_url = f"https://my.feishu.cn/docx/{doc_id}"
         logger.info(f"文档保存成功: {doc_url}")
         return doc_url
@@ -56,7 +97,6 @@ def save_to_feishu_doc(client, title: str, tweet_data: dict, summary_data: dict)
 def write_document_content(client, doc_id: str, tweet_data: dict, summary_data: dict):
     """写入飞书文档内容"""
     try:
-        # 获取根块
         req = GetDocumentBlockRequest.builder().document_id(doc_id).block_id(doc_id).build()
         resp = client.docx.v1.document_block.get(req)
 
@@ -64,26 +104,20 @@ def write_document_content(client, doc_id: str, tweet_data: dict, summary_data: 
 
         blocks = []
 
-        # 摘要
         if summary_data.get("summary_zh"):
             blocks.extend([create_heading2("摘要"), create_text(summary_data["summary_zh"])])
 
-        # 原文
         if tweet_data.get("text"):
             blocks.extend([create_heading2("原文"), create_text(tweet_data["text"])])
 
-        # 评论提示
         blocks.extend([create_heading2("评论"), create_text("需要认证才能获取评论，请点击来源链接查看")])
 
-        # 标签
         if summary_data.get("tags"):
             blocks.extend([create_heading2("标签"), create_text(" ".join(f"#{t}" for t in summary_data["tags"]))])
 
-        # 来源
         if tweet_data.get("url"):
             blocks.extend([create_heading2("来源"), create_text(tweet_data["url"])])
 
-        # 添加块
         for i, block in enumerate(blocks):
             try:
                 req = CreateDocumentBlockChildrenRequest.builder() \

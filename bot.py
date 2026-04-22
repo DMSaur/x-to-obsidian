@@ -278,7 +278,35 @@ async def debug_doc():
         {"text": "这是测试内容", "url": "https://x.com/test/status/123"},
         {"summary_zh": "测试摘要", "tags": ["test"]},
     )
-    return {"result": result}
+    return {"result": result, "user_open_id_set": bool(os.environ.get("FEISHU_USER_OPEN_ID", ""))}
+
+
+@app.get("/debug/share")
+async def debug_share():
+    """测试分享功能"""
+    from feishu_writer import save_to_feishu_doc, share_document_to_user, USER_OPEN_ID
+
+    # 先创建文档
+    doc_url = save_to_feishu_doc(
+        client,
+        "分享测试文档",
+        {"text": "测试分享功能", "url": "https://x.com/test/status/123"},
+        {"summary_zh": "测试", "tags": ["test"]},
+    )
+
+    if not doc_url:
+        return {"error": "创建文档失败"}
+
+    # 提取 doc_id
+    doc_id = doc_url.split("/")[-1]
+
+    return {
+        "doc_url": doc_url,
+        "doc_id": doc_id,
+        "user_open_id": USER_OPEN_ID,
+        "user_open_id_set": bool(USER_OPEN_ID),
+        "hint": "请在 Render 设置环境变量 FEISHU_USER_OPEN_ID=你的open_id",
+    }
 
 
 if __name__ == "__main__":
