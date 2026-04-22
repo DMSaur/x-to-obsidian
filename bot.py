@@ -325,6 +325,40 @@ async def debug_wiki_info():
     }
 
 
+@app.get("/debug/wiki/list")
+async def debug_wiki_list():
+    """调试端点：列出所有 Wiki 空间，找到正确的 space_id"""
+    from lark_oapi.api.wiki.v2 import ListSpaceRequest
+
+    req = ListSpaceRequest.builder() \
+        .page_size(20) \
+        .build()
+
+    resp = client.wiki.v2.space.list(req)
+
+    if not resp.success():
+        return {
+            "success": False,
+            "code": resp.code,
+            "msg": resp.msg,
+        }
+
+    spaces = []
+    if resp.data and resp.data.items:
+        for item in resp.data.items:
+            spaces.append({
+                "space_id": item.space.id if hasattr(item, 'space') and hasattr(item.space, 'id') else str(item),
+                "name": item.space.name if hasattr(item, 'space') and hasattr(item.space, 'name') else "",
+                "token": getattr(item, 'token', '') if hasattr(item, 'token') else "",
+            })
+
+    return {
+        "success": True,
+        "count": len(spaces),
+        "spaces": spaces,
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
