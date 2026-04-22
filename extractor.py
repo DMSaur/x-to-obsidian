@@ -1,8 +1,12 @@
-"""推文内容提取模块 — 使用 Playwright (自带 Chromium，适合云端部署)"""
+"""推文内容提取模块 — 使用 oEmbed API（公开，无需认证）"""
 
 import logging
 import os
 import re
+import json
+
+import httpx
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
@@ -11,19 +15,12 @@ X_URL_PATTERN = re.compile(
     r"https?://(?:x\.com|twitter\.com)/\w+/status/(\d+)"
 )
 
-# 检测运行环境
-USE_PLAYWRIGHT = os.environ.get("USE_PLAYWRIGHT", "false").lower() == "true"
-
-# Playwright 导入（可选，云端部署时安装）
+# Playwright 导入（备用方案）
 try:
     from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
-
-# xreach 导入（本地使用）
-XREACH_PATH = "/Users/dimo/.nvm/versions/node/v24.14.0/bin/xreach"
-NODE_PATH = "/Users/dimo/.nvm/versions/node/v24.14.0/bin"
 
 
 def extract_tweet_id(url: str) -> str | None:
@@ -38,15 +35,78 @@ def is_x_url(text: str) -> str | None:
     return match.group(0) if match else None
 
 
+def extract_tweet_oembed(url: str) -> dict | None:
+    """
+    使用 oEmbed API 提取推文（公开 API，无需认证）。
+
+    这是首选方法，最简单最可靠。
+    """
+    tweet_id = extract_tweet_id(url)
+    if not tweet_id:
+        return None
+
+    try:
+        # oEmbed API
+        oembed_url = f"https://publish.twitter.com/oembed?url={url}"
+
+        with httpx.Client(timeout=30) as client:
+            resp = client.get(oembed_url)
+            resp.raise_for_status()
+
+        data = resp.json()
+
+        # 从 HTML 中解析推文内容
+        html = data.get("html", "")
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 提取文本
+        p_tag = soup.find("p")
+        text = p_tag.get_text() if p_tag else ""
+
+        # 清理 HTML 实体
+        text = text.replace("&#39;", "'").replace("&amp;", "&").replace("&mdash;", "—")
+
+        # 提取作者
+        author_name = data.get("author_name", "")
+        author_handle = ""
+        author_url = data.get("author_url", "")
+        if author_url:
+            # 从 URL 提取 handle: https://twitter.com/LinQingV
+            author_handle = "@" + author_url.split("/")[-1]
+
+        # oEmbed 不提供统计数据和图片，需要额外获取
+        # 但对于基本功能已经足够
+
+        return {
+            "id": tweet_id,
+            "text": text,
+            "author_name": author_name,
+            "author_handle": author_handle,
+            "created_at": "",
+            "like_count": 0,
+            "retweet_count": 0,
+            "reply_count": 0,
+            "url": url,
+            "images": [],
+        }
+
+    except Exception as e:
+        logger.error(f"oEmbed 提取失败: {e}")
+        return None
+
+
 def extract_tweet_playwright(url: str) -> dict | None:
-    """使用 Playwright 提取推文（云端部署）"""
+    """使用 Playwright 提取推文（备用方案，获取更多信息）"""
+    if not HAS_PLAYWRIGHT:
+        logger.warning("Playwright 未安装")
+        return None
+
     tweet_id = extract_tweet_id(url)
     if not tweet_id:
         return None
 
     try:
         with sync_playwright() as p:
-            # 启动 Chromium（添加反检测参数）
             browser = p.chromium.launch(
                 headless=True,
                 args=[
@@ -56,79 +116,51 @@ def extract_tweet_playwright(url: str) -> dict | None:
                 ]
             )
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
             )
             page = context.new_page()
-
-            # 增加超时到 60 秒
             page.set_default_timeout(60000)
 
-            # 访问推文页面（使用 domcontentloaded 而非 networkidle）
             logger.info(f"Playwright 正在访问: {url}")
             page.goto(url, wait_until="domcontentloaded", timeout=60000)
 
-            # 等待推文内容加载（增加超时）
-            logger.info("等待推文内容...")
             try:
                 page.wait_for_selector('[data-testid="tweet"]', timeout=30000)
-            except PlaywrightTimeout:
-                # 尝试备用选择器
+            except:
                 page.wait_for_selector('article', timeout=15000)
 
-            # 提取推文文本
             tweet_text = ""
-            try:
-                # 尝试多个选择器
-                for selector in ['[data-testid="tweetText"]', 'div[data-testid="tweet"] div[dir="auto"]', 'article div[dir="auto"]']:
-                    try:
-                        text_element = page.locator(selector).first
-                        if text_element.count() > 0:
-                            tweet_text = text_element.inner_text(timeout=5000)
-                            if tweet_text:
-                                break
-                    except Exception:
-                        continue
-            except Exception as e:
-                logger.warning(f"提取文本失败: {e}")
+            for selector in ['[data-testid="tweetText"]', 'article div[dir="auto"]']:
+                try:
+                    el = page.locator(selector).first
+                    if el.count() > 0:
+                        tweet_text = el.inner_text(timeout=5000)
+                        if tweet_text:
+                            break
+                except:
+                    continue
 
-            # 提取作者信息
             author_name = ""
             author_handle = ""
             try:
-                # 尝试多种方式获取作者
-                user_link = page.locator('a[href*="/LinQingV"]').first
-                if user_link.count() > 0:
-                    author_handle = "@LinQingV"
                 spans = page.locator('[data-testid="User-Name"] span').all()
                 if spans:
                     author_name = spans[0].inner_text() if len(spans) > 0 else ""
-            except Exception as e:
-                logger.warning(f"提取作者失败: {e}")
+                # 从 URL 提取 handle
+                username = url.split("/")[3]
+                author_handle = "@" + username
+            except:
+                pass
 
-            # 提取图片
             images = []
             try:
                 img_elements = page.locator('[data-testid="tweetPhoto"] img')
                 for i in range(img_elements.count()):
                     img_url = img_elements.nth(i).get_attribute("src")
                     if img_url:
-                        # 获取原图 URL（替换参数）
                         img_url = img_url.split("?")[0] + "?format=orig"
                         images.append({"url": img_url, "alt": ""})
-            except Exception:
-                pass
-
-            # 提取统计数据
-            like_count = 0
-            retweet_count = 0
-            reply_count = 0
-            try:
-                # 查找 likes 按钮的数据
-                likes_group = page.locator('[data-testid="like"]').first
-                likes_text = likes_group.inner_text()
-                if likes_text:
-                    like_count = int(likes_text) if likes_text.isdigit() else 0
-            except Exception:
+            except:
                 pass
 
             browser.close()
@@ -139,9 +171,9 @@ def extract_tweet_playwright(url: str) -> dict | None:
                 "author_name": author_name,
                 "author_handle": author_handle,
                 "created_at": "",
-                "like_count": like_count,
-                "retweet_count": retweet_count,
-                "reply_count": reply_count,
+                "like_count": 0,
+                "retweet_count": 0,
+                "reply_count": 0,
                 "url": url,
                 "images": images,
             }
@@ -151,194 +183,88 @@ def extract_tweet_playwright(url: str) -> dict | None:
         return None
 
 
-def extract_tweet_xreach(url: str) -> dict | None:
-    """使用 xreach CLI 提取推文（本地运行）"""
-    import json
-    import subprocess
-
-    tweet_id = extract_tweet_id(url)
-    if not tweet_id:
-        return None
-
-    try:
-        env = os.environ.copy()
-        env["PATH"] = NODE_PATH + ":" + env.get("PATH", "")
-
-        result = subprocess.run(
-            [XREACH_PATH, "tweet", tweet_id, "--json"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-        )
-
-        if result.returncode != 0:
-            logger.error(f"xreach 错误: {result.stderr}")
-            return None
-
-        data = json.loads(result.stdout)
-        tweet = data[0] if isinstance(data, list) else data
-
-        images = []
-        for m in tweet.get("media", []):
-            if m.get("type") == "photo":
-                images.append({
-                    "url": m.get("url", ""),
-                    "alt": m.get("altText", ""),
-                })
-
-        return {
-            "id": tweet.get("id", tweet_id),
-            "text": tweet.get("text", ""),
-            "author_name": tweet.get("user", {}).get("name", ""),
-            "author_handle": "@" + tweet.get("user", {}).get("screenName", ""),
-            "created_at": tweet.get("createdAt", ""),
-            "like_count": tweet.get("likeCount", 0),
-            "retweet_count": tweet.get("retweetCount", 0),
-            "reply_count": tweet.get("replyCount", 0),
-            "url": url,
-            "images": images,
-        }
-
-    except Exception as e:
-        logger.error(f"xreach 提取失败: {e}")
-        return None
-
-
 def extract_tweet(url: str) -> dict | None:
     """
     提取推文内容。
 
-    自动选择方法：
-    - 云端（USE_PLAYWRIGHT=true）: 使用 Playwright
-    - 本地: 使用 xreach CLI
+    优先使用 oEmbed（最简单可靠），失败时尝试 Playwright。
     """
-    if USE_PLAYWRIGHT and HAS_PLAYWRIGHT:
-        logger.info("使用 Playwright 提取推文")
-        return extract_tweet_playwright(url)
-    else:
-        logger.info("使用 xreach 提取推文")
-        return extract_tweet_xreach(url)
+    # 优先使用 oEmbed
+    result = extract_tweet_oembed(url)
+    if result:
+        logger.info("使用 oEmbed API 成功提取推文")
+        return result
+
+    # 备用：Playwright（获取更多信息如图片）
+    logger.info("oEmbed 失败，尝试 Playwright...")
+    return extract_tweet_playwright(url)
+
+
+def extract_replies(url: str, max_replies: int = 20) -> list[dict]:
+    """
+    提取推文的评论/回复。
+
+    oEmbed 不提供评论，需要使用 Playwright。
+    """
+    if not HAS_PLAYWRIGHT:
+        logger.warning("Playwright 未安装，无法提取评论")
+        return []
+
+    return extract_replies_playwright(url, max_replies)
 
 
 def extract_replies_playwright(url: str, max_replies: int = 20) -> list[dict]:
-    """使用 Playwright 提取评论（云端部署）"""
+    """使用 Playwright 提取评论"""
     tweet_id = extract_tweet_id(url)
     if not tweet_id:
         return []
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
             page = browser.new_page()
-            page.set_default_timeout(30000)
+            page.set_default_timeout(60000)
 
-            page.goto(url, wait_until="networkidle")
+            page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_selector('[data-testid="tweet"]', timeout=30000)
 
-            # 等待回复加载
-            page.wait_for_selector('[data-testid="tweet"]', timeout=15000)
-
-            # 滚动加载更多回复
             replies = []
-            for _ in range(3):  # 滚动3次
+            for _ in range(2):
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 page.wait_for_timeout(2000)
 
                 reply_elements = page.locator('[data-testid="tweet"]').all()
-                for reply in reply_elements[1:]:  # 跳过第一条（原推文）
+                for reply in reply_elements[1:]:
                     try:
                         text = reply.locator('[data-testid="tweetText"]').inner_text()
                         author = reply.locator('[data-testid="User-Name"] a').first.inner_text()
 
                         images = []
-                        img_elements = reply.locator('[data-testid="tweetPhoto"] img')
-                        for i in range(img_elements.count()):
-                            img_url = img_elements.nth(i).get_attribute("src")
+                        imgs = reply.locator('[data-testid="tweetPhoto"] img')
+                        for i in range(imgs.count()):
+                            img_url = imgs.nth(i).get_attribute("src")
                             if img_url:
                                 images.append({"url": img_url.split("?")[0] + "?format=orig", "alt": ""})
 
-                        replies.append({
-                            "text": text,
-                            "author": author,
-                            "images": images,
-                        })
-
+                        replies.append({"text": text, "author": author, "images": images})
                         if len(replies) >= max_replies:
                             break
-                    except Exception:
+                    except:
                         continue
 
                 if len(replies) >= max_replies:
                     break
 
             browser.close()
-            logger.info(f"Playwright 提取到 {len(replies)} 条评论")
+            logger.info(f"提取到 {len(replies)} 条评论")
             return replies
 
     except Exception as e:
-        logger.error(f"Playwright 提取评论失败: {e}")
+        logger.error(f"提取评论失败: {e}")
         return []
-
-
-def extract_replies_xreach(url: str, max_replies: int = 20) -> list[dict]:
-    """使用 xreach CLI 提取评论（本地运行）"""
-    import json
-    import subprocess
-
-    tweet_id = extract_tweet_id(url)
-    if not tweet_id:
-        return []
-
-    try:
-        env = os.environ.copy()
-        env["PATH"] = NODE_PATH + ":" + env.get("PATH", "")
-
-        result = subprocess.run(
-            [XREACH_PATH, "thread", tweet_id, "--json"],
-            capture_output=True,
-            text=True,
-            timeout=60,
-            env=env,
-        )
-
-        if result.returncode != 0:
-            return []
-
-        data = json.loads(result.stdout)
-        replies = []
-
-        for item in data:
-            if item.get("id") == tweet_id or item.get("isRetweet"):
-                continue
-
-            images = []
-            for m in item.get("media", []):
-                if m.get("type") == "photo":
-                    images.append({"url": m.get("url", ""), "alt": m.get("altText", "")})
-
-            replies.append({
-                "text": item.get("text", ""),
-                "author": "@" + item.get("user", {}).get("screenName", ""),
-                "images": images,
-            })
-
-            if len(replies) >= max_replies:
-                break
-
-        logger.info(f"xreach 提取到 {len(replies)} 条评论")
-        return replies
-
-    except Exception as e:
-        logger.error(f"xreach 提取评论失败: {e}")
-        return []
-
-
-def extract_replies(url: str, max_replies: int = 20) -> list[dict]:
-    """提取推文的评论/回复。"""
-    if USE_PLAYWRIGHT and HAS_PLAYWRIGHT:
-        return extract_replies_playwright(url, max_replies)
-    else:
-        return extract_replies_xreach(url, max_replies)
 
 
 if __name__ == "__main__":
