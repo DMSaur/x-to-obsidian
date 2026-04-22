@@ -12,6 +12,31 @@ from lark_oapi.api.docx.v1 import (
 
 logger = logging.getLogger(__name__)
 
+# 飞书文档 block 类型
+BLOCK_TYPE_TEXT = 2
+BLOCK_TYPE_HEADING2 = 4
+BLOCK_TYPE_HEADING3 = 5
+
+
+def create_heading2(text: str) -> dict:
+    """创建二级标题 block"""
+    return {
+        "block_type": BLOCK_TYPE_HEADING2,
+        "heading2": {
+            "elements": [{"text_run": {"content": text}}]
+        }
+    }
+
+
+def create_text(text: str) -> dict:
+    """创建文本 block"""
+    return {
+        "block_type": BLOCK_TYPE_TEXT,
+        "text": {
+            "elements": [{"text_run": {"content": text}}]
+        }
+    }
+
 
 def save_to_feishu_wiki(
     client,
@@ -24,7 +49,6 @@ def save_to_feishu_wiki(
 ) -> str | None:
     """将推文保存到飞书知识库 Wiki。"""
     try:
-        # 1. 创建飞书文档
         logger.info("正在创建飞书文档...")
 
         create_doc_req = CreateDocumentRequest.builder() \
@@ -43,10 +67,8 @@ def save_to_feishu_wiki(
         doc_id = create_doc_resp.data.document.document_id
         logger.info(f"文档创建成功: doc_id={doc_id}")
 
-        # 2. 写入文档内容
         write_document_content(client, doc_id, tweet_data, summary_data, replies)
 
-        # 3. 添加文档到 Wiki
         try:
             from lark_oapi.api.wiki.v2 import MoveDocsToWikiSpaceNodeRequest, MoveDocsToWikiSpaceNodeRequestBody
 
@@ -97,63 +119,55 @@ def write_document_content(client, doc_id: str, tweet_data: dict, summary_data: 
 
         logger.info(f"根块 ID: {root_block_id}")
 
-        # 构建内容块
+        # 构建内容块列表
         blocks = []
 
-        # 添加摘要
+        # === 摘要 ===
         summary_text = summary_data.get("summary_zh", "")
         if summary_text:
-            blocks.append({
-                "block_type": 2,
-                "text": {
-                    "elements": [{"text_run": {"content": f"## 摘要\n\n{summary_text}\n\n"}}],
-                    "style": {}
-                }
-            })
+            blocks.append(create_heading2("摘要"))
+            blocks.append(create_text(summary_text))
 
-        # 添加原文
+        # === 原文 ===
         original_text = tweet_data.get("text", "")
         if original_text:
-            blocks.append({
-                "block_type": 2,
-                "text": {
-                    "elements": [{"text_run": {"content": f"## 原文\n\n{original_text}\n\n"}}],
-                    "style": {}
-                }
-            })
+            blocks.append(create_heading2("原文"))
+            blocks.append(create_text(original_text))
 
-        # 添加评论
-        if replies:
-            replies_text = "\n".join([f"- {r.get('author', '未知')}: {r.get('text', '')[:100]}" for r in replies[:5]])
-            blocks.append({
-                "block_type": 2,
-                "text": {
-                    "elements": [{"text_run": {"content": f"## 评论（{len(replies)}条）\n\n{replies_text}"}}],
-                    "style": {}
-                }
-            })
+        # === 评论 ===
+        if replies and len(replies) > 0:
+            blocks.append(create_heading2(f"评论（{len(replies)}条）"))
+            for r in replies[:10]:
+                author = r.get("author", "未知")
+                text = r.get("text", "")[:200]
+                blocks.append(create_text(f"**{author}**: {text}"))
+        else:
+            # 即使没有评论也显示提示
+            blocks.append(create_heading2("评论"))
+            blocks.append(create_text("暂无评论数据"))
 
-        # 添加标签
+        # === 标签 ===
         tags = summary_data.get("tags", [])
         if tags:
+            blocks.append(create_heading2("标签"))
             tags_text = " ".join([f"#{t}" for t in tags])
-            blocks.append({
-                "block_type": 2,
-                "text": {
-                    "elements": [{"text_run": {"content": f"## 标签\n\n{tags_text}"}}],
-                    "style": {}
-                }
-            })
+            blocks.append(create_text(tags_text))
+
+        # === 来源 ===
+        source_url = tweet_data.get("url", "")
+        if source_url:
+            blocks.append(create_heading2("来源"))
+            blocks.append(create_text(source_url))
 
         # 添加块到文档
-        for block in blocks:
+        for i, block in enumerate(blocks):
             try:
                 req = CreateDocumentBlockChildrenRequest.builder() \
                     .document_id(doc_id) \
                     .block_id(root_block_id) \
                     .request_body(CreateDocumentBlockChildrenRequestBody.builder()
                                  .children([block])
-                                 .index(-1)
+                                 .index(i)
                                  .build()) \
                     .build()
 
