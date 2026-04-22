@@ -84,8 +84,10 @@ def save_to_feishu_wiki(
             move_resp = client.wiki.v2.space_node.move_docs_to_wiki(move_req)
 
             if not move_resp.success():
-                logger.warning(f"添加到 Wiki 失败: {move_resp.msg}")
-                return f"https://my.feishu.cn/docx/{doc_id}"
+                error_msg = f"MoveDocsToWiki 失败: code={move_resp.code}, msg={move_resp.msg}"
+                logger.error(error_msg)
+                # 返回文档链接 + 错误信息
+                return f"https://my.feishu.cn/docx/{doc_id} (错误: {error_msg})"
 
             node_token = move_resp.data.node.token
             wiki_url = f"https://my.feishu.cn/wiki/{space_id}/{node_token}"
@@ -93,8 +95,9 @@ def save_to_feishu_wiki(
             return wiki_url
 
         except Exception as e:
-            logger.warning(f"添加到 Wiki 异常: {e}")
-            return f"https://my.feishu.cn/docx/{doc_id}"
+            error_msg = f"MoveDocsToWiki 异常: {e}"
+            logger.error(error_msg)
+            return f"https://my.feishu.cn/docx/{doc_id} (异常: {error_msg})"
 
     except Exception as e:
         logger.error(f"保存到飞书失败: {e}")

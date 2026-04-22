@@ -274,6 +274,34 @@ async def debug_env():
     }
 
 
+@app.get("/debug/wiki")
+async def debug_wiki():
+    """调试端点：测试 MoveDocsToWiki API"""
+    from feishu_writer import save_to_feishu_wiki
+
+    test_tweet = {
+        "text": "测试推文内容",
+        "url": "https://x.com/test/status/123",
+    }
+    test_summary = {
+        "title": "测试文档",
+        "summary_zh": "这是一个测试",
+        "tags": ["test"],
+    }
+
+    result = save_to_feishu_wiki(
+        client,
+        FEISHU.get("wiki_space_id", ""),
+        "API测试文档",
+        "",
+        test_tweet,
+        test_summary,
+        [],
+    )
+
+    return {"result": result, "wiki_space_id": FEISHU.get("wiki_space_id", "")}
+
+
 if __name__ == "__main__":
     import uvicorn
 
