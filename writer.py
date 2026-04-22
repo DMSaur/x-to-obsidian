@@ -66,16 +66,18 @@ def write_note(
     tweet_data: dict,
     summary_data: dict,
     vault_path: str,
+    replies: list[dict] = None,  # 评论数据
     clippings_folder: str = "X-Clippings",
     attachments_folder: str = "attachments",
 ) -> str | None:
     """
-    将推文写入 Obsidian vault。
+    将推文写入 Obsidian vault（包含评论）。
 
     参数:
         tweet_data: extractor.extract_tweet() 返回的字典
         summary_data: summarizer.summarize_tweet() 返回的字典
         vault_path: Obsidian vault 根路径
+        replies: 评论列表（可选）
         clippings_folder: 笔记存放子目录名
         attachments_folder: 图片附件存放目录名
 
@@ -139,6 +141,37 @@ def write_note(
         f"转发 {tweet_data.get('retweet_count', 0)} | "
         f"回复 {tweet_data.get('reply_count', 0)}"
     )
+
+    # 评论部分
+    if replies and len(replies) > 0:
+        parts.append("")
+        parts.append(f"## 评论（{len(replies)}条）")
+        for i, reply in enumerate(replies[:10]):  # 只写入前10条
+            author = reply.get("author", "未知")
+            text = reply.get("text", "")
+            parts.append(f"{author}: {text}")
+
+            # 如果评论有图片，下载并引用
+            reply_images = reply.get("images", [])
+            if reply_images:
+                for j, img in enumerate(reply_images):
+                    img_url = img.get("url", "")
+                    if img_url:
+                        # 下载评论图片
+                        img_dir = vault / attachments_folder / f"x-{tweet_id}"
+                        img_dir.mkdir(parents=True, exist_ok=True)
+                        ext = Path(urlparse(img_url).path).suffix or ".jpg"
+                        local_name = f"reply{i+1}-img{j+1}{ext}"
+                        local_path = img_dir / local_name
+                        try:
+                            with httpx.Client(timeout=30) as c:
+                                resp = c.get(img_url)
+                                resp.raise_for_status()
+                                local_path.write_bytes(resp.content)
+                                parts.append(f"![[{attachments_folder}/x-{tweet_id}/{local_name}]]")
+                        except Exception as e:
+                            logger.error(f"评论图片下载失败: {e}")
+        parts.append("")
 
     content = "\n".join(parts)
 

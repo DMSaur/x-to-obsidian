@@ -110,6 +110,71 @@ def extract_tweet(url: str) -> dict | None:
         return None
 
 
+def extract_replies(url: str, max_replies: int = 20) -> list[dict]:
+    """
+    提取推文的评论/回复。
+
+    返回:
+        [{"text": "...", "author": "@handle", "images": [...]}]
+    """
+    tweet_id = extract_tweet_id(url)
+    if not tweet_id:
+        return []
+
+    env = os.environ.copy()
+    env["PATH"] = NODE_PATH + ":" + env.get("PATH", "")
+
+    try:
+        result = subprocess.run(
+            [XREACH_PATH, "thread", tweet_id, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"提取评论失败: {result.stderr}")
+            return []
+
+        data = json.loads(result.stdout)
+
+        # thread 返回的是整个对话，过滤出回复（排除原推文）
+        replies = []
+        for item in data:
+            # 排除原推文
+            if item.get("id") == tweet_id:
+                continue
+            # 排除转发
+            if item.get("isRetweet"):
+                continue
+
+            # 提取图片
+            images = []
+            for m in item.get("media", []):
+                if m.get("type") == "photo":
+                    images.append({
+                        "url": m.get("url", ""),
+                        "alt": m.get("altText", ""),
+                    })
+
+            replies.append({
+                "text": item.get("text", ""),
+                "author": "@" + item.get("user", {}).get("screenName", ""),
+                "images": images,
+            })
+
+            if len(replies) >= max_replies:
+                break
+
+        logger.info(f"提取到 {len(replies)} 条评论")
+        return replies
+
+    except Exception as e:
+        logger.error(f"提取评论失败: {e}")
+        return []
+
+
 if __name__ == "__main__":
     # 测试
     import sys
