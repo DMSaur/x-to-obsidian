@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: x-to-obsidian
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: NODE_VERSION
+        value: 18
+    # Pre-install Node.js via shell command
+    preDeployCommand: curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && apt-get install -y nodejs && npm install -g xreach
