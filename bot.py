@@ -20,14 +20,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 加载配置
+# 加载配置（支持环境变量）
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
-with open(CONFIG_PATH) as f:
-    config = yaml.safe_load(f)
+try:
+    with open(CONFIG_PATH) as f:
+        config = yaml.safe_load(f)
+except FileNotFoundError:
+    config = {}
 
-FEISHU = config["feishu"]
-OBSIDIAN = config["obsidian"]
-CLAUDE = config["claude"]
+# 环境变量覆盖配置（Render 部署使用）
+FEISHU = {
+    "app_id": os.environ.get("FEISHU_APP_ID", config.get("feishu", {}).get("app_id", "")),
+    "app_secret": os.environ.get("FEISHU_APP_SECRET", config.get("feishu", {}).get("app_secret", "")),
+    "verification_token": os.environ.get("FEISHU_VERIFICATION_TOKEN", config.get("feishu", {}).get("verification_token", "")),
+    "wiki_space_id": os.environ.get("FEISHU_WIKI_SPACE_ID", config.get("feishu", {}).get("wiki_space_id", "")),
+}
+OBSIDIAN = {
+    "vault_path": os.environ.get("OBSIDIAN_VAULT_PATH", config.get("obsidian", {}).get("vault_path", "/tmp/obsidian-vault")),
+    "clippings_folder": config.get("obsidian", {}).get("clippings_folder", "X-Clippings"),
+}
+CLAUDE = {
+    "api_key": os.environ.get("DASHSCOPE_API_KEY", config.get("claude", {}).get("api_key", "")),
+    "base_url": os.environ.get("CLAUDE_BASE_URL", config.get("claude", {}).get("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")),
+    "model": config.get("claude", {}).get("model", "qwen3.5-plus"),
+}
 
 app = FastAPI(title="X to Obsidian Bot")
 
@@ -251,7 +267,8 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
+    # Render 使用 PORT 环境变量
+    port = int(os.environ.get("PORT", config.get("server", {}).get("port", 9090)))
     host = config.get("server", {}).get("host", "0.0.0.0")
-    port = config.get("server", {}).get("port", 9090)
     logger.info(f"启动 X to Obsidian Bot on {host}:{port}")
     uvicorn.run(app, host=host, port=port)
