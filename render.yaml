@@ -2,9 +2,7 @@ services:
   - type: web
     name: x-to-obsidian
     env: docker
-    # Dockerfile 方式部署（包含 Python + Node.js + xreach）
+    # 纯 Python 服务（使用 ntscraper 替代 xreach）
     envVars:
       - key: PYTHON_VERSION
         value: 3.11
-      - key: NODE_VERSION
-        value: 18
