@@ -135,16 +135,9 @@ def write_document_content(client, doc_id: str, tweet_data: dict, summary_data: 
             blocks.append(create_text(original_text))
 
         # === 评论 ===
-        if replies and len(replies) > 0:
-            blocks.append(create_heading2(f"评论（{len(replies)}条）"))
-            for r in replies[:10]:
-                author = r.get("author", "未知")
-                text = r.get("text", "")[:200]
-                blocks.append(create_text(f"**{author}**: {text}"))
-        else:
-            # 即使没有评论也显示提示
-            blocks.append(create_heading2("评论"))
-            blocks.append(create_text("暂无评论数据"))
+        # 评论需要 X 认证，云端无法获取
+        blocks.append(create_heading2("评论"))
+        blocks.append(create_text("需要认证才能获取评论，请点击来源链接查看"))
 
         # === 标签 ===
         tags = summary_data.get("tags", [])
