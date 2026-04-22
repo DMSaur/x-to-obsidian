@@ -264,6 +264,16 @@ async def health():
     return {"status": "ok", "service": "x-to-obsidian"}
 
 
+@app.get("/debug/env")
+async def debug_env():
+    """调试端点：检查环境变量配置"""
+    return {
+        "wiki_space_id": FEISHU.get("wiki_space_id", ""),
+        "app_id_set": bool(FEISHU.get("app_id")),
+        "app_secret_set": bool(FEISHU.get("app_secret")),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
