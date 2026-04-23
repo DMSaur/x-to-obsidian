@@ -329,8 +329,46 @@ async def debug_myid():
     """返回最近发送消息用户的 open_id"""
     return {
         "open_id": recent_sender_open_id,
+        "user_open_id_env": os.environ.get("FEISHU_USER_OPEN_ID", ""),
         "hint": "发送一条消息给 Bot，然后访问此端点获取你的 open_id",
     }
+
+
+@app.get("/debug/perm")
+async def debug_perm():
+    """测试分享权限"""
+    from feishu_writer import share_document_to_user, USER_OPEN_ID
+    import subprocess, shutil
+
+    # 先创建一个测试文档
+    from feishu_writer import save_to_feishu_doc
+    doc_url = save_to_feishu_doc(
+        client,
+        "权限测试文档",
+        {"text": "测试", "url": "https://x.com/test"},
+        {"summary_zh": "测试", "tags": ["test"]},
+    )
+
+    if not doc_url:
+        return {"error": "创建文档失败"}
+
+    doc_id = doc_url.split("/")[-1]
+
+    # 尝试分享
+    if USER_OPEN_ID:
+        success = share_document_to_user(client, doc_id, USER_OPEN_ID)
+        return {
+            "doc_url": doc_url,
+            "doc_id": doc_id,
+            "user_open_id": USER_OPEN_ID,
+            "share_success": success,
+        }
+    else:
+        return {
+            "doc_url": doc_url,
+            "user_open_id": USER_OPEN_ID,
+            "error": "FEISHU_USER_OPEN_ID 未设置",
+        }
 
 
 if __name__ == "__main__":
