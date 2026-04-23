@@ -356,12 +356,12 @@ async def debug_perm():
 
     # 尝试分享
     if USER_OPEN_ID:
-        success = share_document_to_user(client, doc_id, USER_OPEN_ID)
+        share_result = share_document_to_user(client, doc_id, USER_OPEN_ID)
         return {
             "doc_url": doc_url,
             "doc_id": doc_id,
             "user_open_id": USER_OPEN_ID,
-            "share_success": success,
+            "share_result": share_result,
         }
     else:
         return {

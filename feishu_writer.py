@@ -32,8 +32,8 @@ def create_text(text: str) -> dict:
     return {"block_type": BLOCK_TYPE_TEXT, "text": {"elements": [{"text_run": {"content": text}}]}}
 
 
-def share_document_to_user(client, doc_token: str, user_open_id: str) -> bool:
-    """分享文档给指定用户（可编辑权限）"""
+def share_document_to_user(client, doc_token: str, user_open_id: str) -> dict:
+    """分享文档给指定用户（可编辑权限），返回详细结果"""
     try:
         req = BatchCreatePermissionMemberRequest.builder() \
             .token(doc_token) \
@@ -50,16 +50,14 @@ def share_document_to_user(client, doc_token: str, user_open_id: str) -> bool:
 
         resp = client.drive.v1.permission_member.batch_create(req)
 
-        if resp.success():
-            logger.info(f"文档已分享给用户: {user_open_id}")
-            return True
-        else:
-            logger.warning(f"分享文档失败: code={resp.code}, msg={resp.msg}")
-            return False
+        return {
+            "success": resp.success(),
+            "code": resp.code,
+            "msg": resp.msg,
+        }
 
     except Exception as e:
-        logger.error(f"分享文档异常: {e}")
-        return False
+        return {"success": False, "error": str(e)}
 
 
 def save_to_feishu_doc(client, title: str, tweet_data: dict, summary_data: dict) -> str | None:
@@ -83,7 +81,11 @@ def save_to_feishu_doc(client, title: str, tweet_data: dict, summary_data: dict)
         write_document_content(client, doc_id, tweet_data, summary_data)
 
         if USER_OPEN_ID:
-            share_document_to_user(client, doc_id, USER_OPEN_ID)
+            result = share_document_to_user(client, doc_id, USER_OPEN_ID)
+            if not result.get("success"):
+                logger.warning(f"分享失败: {result}")
+            else:
+                logger.info(f"文档已分享给: {USER_OPEN_ID}")
 
         doc_url = f"https://my.feishu.cn/docx/{doc_id}"
         logger.info(f"文档保存成功: {doc_url}")
