@@ -286,7 +286,6 @@ async def debug_share():
     """测试分享功能"""
     from feishu_writer import save_to_feishu_doc, share_document_to_user, USER_OPEN_ID
 
-    # 先创建文档
     doc_url = save_to_feishu_doc(
         client,
         "分享测试文档",
@@ -297,7 +296,6 @@ async def debug_share():
     if not doc_url:
         return {"error": "创建文档失败"}
 
-    # 提取 doc_id
     doc_id = doc_url.split("/")[-1]
 
     return {
@@ -307,6 +305,50 @@ async def debug_share():
         "user_open_id_set": bool(USER_OPEN_ID),
         "hint": "请在 Render 设置环境变量 FEISHU_USER_OPEN_ID=你的open_id",
     }
+
+
+@app.get("/debug/myid")
+async def debug_myid():
+    """获取你自己的 open_id（通过飞书 API）"""
+    from lark_oapi.api.contact.v3 import GetUserRequest
+
+    # 尝试通过多种方式获取用户信息
+    # 方法1：通过 bot_user_id
+    try:
+        req = GetUserRequest.builder() \
+            .user_id("bot_user_id_placeholder") \
+            .user_id_type("open_id") \
+            .build()
+
+        resp = client.contact.v3.user.get(req)
+        if resp.success():
+            return {"method": "get_user", "success": True, "data": str(resp.data)}
+    except Exception as e:
+        pass
+
+    # 方法2：列出用户（需要权限）
+    try:
+        from lark_oapi.api.contact.v3 import FindByDepartmentUserRequest
+        req = FindByDepartmentUserRequest.builder() \
+            .department_id("0") \
+            .user_id_type("open_id") \
+            .page_size(10) \
+            .build()
+
+        resp = client.contact.v3.user.find_by_department(req)
+        if resp.success() and resp.data and resp.data.items:
+            users = []
+            for u in resp.data.items:
+                users.append({
+                    "open_id": u.open_id,
+                    "name": u.name,
+                    "user_id": u.user_id,
+                })
+            return {"method": "find_by_department", "success": True, "users": users}
+        else:
+            return {"method": "find_by_department", "success": False, "msg": resp.msg}
+    except Exception as e:
+        return {"method": "find_by_department", "error": str(e)}
 
 
 if __name__ == "__main__":
