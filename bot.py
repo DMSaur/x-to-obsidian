@@ -216,12 +216,18 @@ async def handle_event(request: Request):
 
     event = body.get("event", {})
     message = event.get("message", {})
+    # 记录完整 sender 信息用于调试
+    logger.info(f"sender 数据: {event.get('sender', {})}")
     message_id = message.get("message_id", "")
     msg_type = message.get("message_type", "")
 
     # 记录发送者 open_id
     sender = event.get("sender", {})
     sender_open_id = sender.get("open_id", "")
+    # 飞书 v2 事件中 open_id 可能在 sender_id 下
+    if not sender_open_id:
+        sender_id = sender.get("sender_id", {})
+        sender_open_id = sender_id.get("open_id", "") or sender_id.get("user_id", "")
     if sender_open_id:
         global recent_sender_open_id
         recent_sender_open_id = sender_open_id
