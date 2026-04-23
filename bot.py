@@ -58,6 +58,9 @@ client = lark.Client.builder() \
 # 已处理消息缓存（去重，最多保留100条，1小时过期）
 processed_messages = deque(maxlen=100)
 
+# 记录最近发送消息的用户 open_id
+recent_sender_open_id = ""
+
 
 def is_message_processed(message_id: str) -> bool:
     """检查消息是否已处理（去重）"""
@@ -216,6 +219,14 @@ async def handle_event(request: Request):
     message_id = message.get("message_id", "")
     msg_type = message.get("message_type", "")
 
+    # 记录发送者 open_id
+    sender = event.get("sender", {})
+    sender_open_id = sender.get("open_id", "")
+    if sender_open_id:
+        global recent_sender_open_id
+        recent_sender_open_id = sender_open_id
+        logger.info(f"收到消息，发送者 open_id: {sender_open_id}")
+
     # 仅处理文本消息
     if msg_type != "text":
         return {"status": "ignored"}
@@ -309,46 +320,11 @@ async def debug_share():
 
 @app.get("/debug/myid")
 async def debug_myid():
-    """获取你自己的 open_id（通过飞书 API）"""
-    from lark_oapi.api.contact.v3 import GetUserRequest
-
-    # 尝试通过多种方式获取用户信息
-    # 方法1：通过 bot_user_id
-    try:
-        req = GetUserRequest.builder() \
-            .user_id("bot_user_id_placeholder") \
-            .user_id_type("open_id") \
-            .build()
-
-        resp = client.contact.v3.user.get(req)
-        if resp.success():
-            return {"method": "get_user", "success": True, "data": str(resp.data)}
-    except Exception as e:
-        pass
-
-    # 方法2：列出用户（需要权限）
-    try:
-        from lark_oapi.api.contact.v3 import FindByDepartmentUserRequest
-        req = FindByDepartmentUserRequest.builder() \
-            .department_id("0") \
-            .user_id_type("open_id") \
-            .page_size(10) \
-            .build()
-
-        resp = client.contact.v3.user.find_by_department(req)
-        if resp.success() and resp.data and resp.data.items:
-            users = []
-            for u in resp.data.items:
-                users.append({
-                    "open_id": u.open_id,
-                    "name": u.name,
-                    "user_id": u.user_id,
-                })
-            return {"method": "find_by_department", "success": True, "users": users}
-        else:
-            return {"method": "find_by_department", "success": False, "msg": resp.msg}
-    except Exception as e:
-        return {"method": "find_by_department", "error": str(e)}
+    """返回最近发送消息用户的 open_id"""
+    return {
+        "open_id": recent_sender_open_id,
+        "hint": "发送一条消息给 Bot，然后访问此端点获取你的 open_id",
+    }
 
 
 if __name__ == "__main__":
