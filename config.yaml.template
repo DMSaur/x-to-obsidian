@@ -20,3 +20,10 @@ claude:
 server:
   host: "0.0.0.0"
   port: 9090
+
+# GitHub 同步（云端部署时启用，设置对应环境变量即可）
+# 在 Render 中设置 GITHUB_TOKEN 和 GITHUB_REPO 环境变量
+# github:
+#   token: ""               # GitHub Personal Access Token
+#   repo: "DMSaur/x-clippings"  # GitHub 私有仓库
+#   branch: "main"

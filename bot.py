@@ -14,6 +14,11 @@ from summarizer import summarize_tweet
 from writer import write_note
 from feishu_writer import save_to_feishu_doc
 
+# GitHub 同步（云端部署时使用）
+GITHUB_MODE = bool(os.environ.get("GITHUB_TOKEN"))
+if GITHUB_MODE:
+    from github_writer import push_note
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -153,39 +158,40 @@ def process_x_url(url: str, retry_count: int = 0, max_retries: int = 3) -> str:
         else:
             return "❌ AI摘要生成失败，已重试多次。"
 
-    # 4. 写入 Obsidian（包含评论）
-    logger.info("正在写入 Obsidian...")
-    filepath = write_note(
-        tweet,
-        summary,
-        OBSIDIAN["vault_path"],
-        replies=replies,
-        clippings_folder=OBSIDIAN.get("clippings_folder", "X-Clippings"),
-    )
-    if not filepath:
-        return "❌ 写入 Obsidian 失败。"
-
-    # 5. 保存到飞书文档（存到个人文档空间）
-    feishu_result = ""
-    logger.info("正在保存到飞书...")
-    doc_url = save_to_feishu_doc(
-        client,
-        summary.get("title", "推文摘要"),
-        tweet,
-        summary,
-    )
-    if doc_url:
-        feishu_result = f"\n📚 飞书文档: {doc_url}"
+    # 4. 写入 Obsidian
+    if GITHUB_MODE:
+        logger.info("正在推送到 GitHub (Obsidian 同步)...")
+        github_url = push_note(
+            tweet,
+            summary,
+            replies=replies,
+            clippings_folder=OBSIDIAN.get("clippings_folder", "X-Clippings"),
+            attachments_folder=OBSIDIAN.get("attachments_folder", "attachments"),
+        )
+        if not github_url:
+            return "❌ 推送到 GitHub 失败。"
+        obsidian_result = "✅ 已保存到 Obsidian (GitHub)\n"
+    else:
+        logger.info("正在写入本地 Obsidian...")
+        filepath = write_note(
+            tweet,
+            summary,
+            OBSIDIAN["vault_path"],
+            replies=replies,
+            clippings_folder=OBSIDIAN.get("clippings_folder", "X-Clippings"),
+        )
+        if not filepath:
+            return "❌ 写入 Obsidian 失败。"
+        obsidian_result = "✅ 已保存到 Obsidian\n"
 
     tags_str = " ".join(f"#{t}" for t in summary.get("tags", []))
     replies_info = f"💬 {len(replies)}条评论" if replies else ""
     result = (
-        f"✅ 已保存到 Obsidian\n"
+        f"{obsidian_result}"
         f"📰 {summary.get('title', '')}\n"
         f"📝 {summary.get('summary_zh', '')}\n"
         f"🏷️ {tags_str}\n"
         f"👤 {tweet.get('author_handle', '')} {replies_info}"
-        f"{feishu_result}"
     )
     return result
 
