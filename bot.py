@@ -45,9 +45,9 @@ OBSIDIAN = {
     "clippings_folder": config.get("obsidian", {}).get("clippings_folder", "X-Clippings"),
 }
 CLAUDE = {
-    "api_key": os.environ.get("DASHSCOPE_API_KEY", config.get("claude", {}).get("api_key", "")),
-    "base_url": os.environ.get("CLAUDE_BASE_URL", config.get("claude", {}).get("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1")),
-    "model": config.get("claude", {}).get("model", "qwen3.5-plus"),
+    "api_key": os.environ.get("DEEPSEEK_API_KEY", config.get("claude", {}).get("api_key", "")),
+    "base_url": os.environ.get("CLAUDE_BASE_URL", config.get("claude", {}).get("base_url", "https://api.deepseek.com")),
+    "model": config.get("claude", {}).get("model", "deepseek-v4-flash"),
 }
 
 app = FastAPI(title="X to Obsidian Bot")
