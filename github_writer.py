@@ -100,6 +100,7 @@ def push_note(
     tweet_data: dict,
     summary_data: dict,
     replies: list[dict] | None = None,
+    user_note: str = "",
     clippings_folder: str = "X-Clippings",
     attachments_folder: str = "attachments",
 ) -> str | None:
@@ -147,6 +148,12 @@ def push_note(
     parts.append("")
     parts.append(f"## 摘要\n{summary_data.get('summary_zh', '')}")
     parts.append("")
+
+    # 用户笔记
+    if user_note:
+        parts.append(f"## 笔记\n{user_note}")
+        parts.append("")
+
     parts.append(f"## 原文\n{tweet_data.get('text', '')}")
     parts.append("")
 

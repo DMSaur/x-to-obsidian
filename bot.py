@@ -116,10 +116,11 @@ def add_reaction(message_id: str, reaction_type: str):
     return response
 
 
-def process_x_url(url: str, retry_count: int = 0, max_retries: int = 3) -> str:
+def process_x_url(url: str, retry_count: int = 0, max_retries: int = 3, user_note: str = "") -> str:
     """
     处理一条 X 链接：提取 → 摘要 → 写入 Obsidian。
     支持重试机制（最多3次，每次10分钟超时）。
+    user_note: 用户在发送链接时附带的笔记文字。
     返回处理结果文本。
     """
     # 1. 提取推文
@@ -147,14 +148,14 @@ def process_x_url(url: str, retry_count: int = 0, max_retries: int = 3) -> str:
         # 超时或错误，检查是否可以重试
         if retry_count < max_retries:
             logger.warning(f"API调用失败，准备重试 ({retry_count + 1}/{max_retries}): {e}")
-            return process_x_url(url, retry_count + 1, max_retries)
+            return process_x_url(url, retry_count + 1, max_retries, user_note)
         else:
             return f"❌ API调用失败，已重试{max_retries}次: {e}"
 
     if not summary:
         if retry_count < max_retries:
             logger.warning(f"摘要生成失败，准备重试 ({retry_count + 1}/{max_retries})")
-            return process_x_url(url, retry_count + 1, max_retries)
+            return process_x_url(url, retry_count + 1, max_retries, user_note)
         else:
             return "❌ AI摘要生成失败，已重试多次。"
 
@@ -165,6 +166,7 @@ def process_x_url(url: str, retry_count: int = 0, max_retries: int = 3) -> str:
             tweet,
             summary,
             replies=replies,
+            user_note=user_note,
             clippings_folder=OBSIDIAN.get("clippings_folder", "X-Clippings"),
             attachments_folder=OBSIDIAN.get("attachments_folder", "attachments"),
         )
@@ -178,6 +180,7 @@ def process_x_url(url: str, retry_count: int = 0, max_retries: int = 3) -> str:
             summary,
             OBSIDIAN["vault_path"],
             replies=replies,
+            user_note=user_note,
             clippings_folder=OBSIDIAN.get("clippings_folder", "X-Clippings"),
         )
         if not filepath:
@@ -258,7 +261,12 @@ async def handle_event(request: Request):
     if not url:
         return {"status": "ignored"}
 
+    # 提取用户附加的笔记（去掉 URL 后的剩余文字）
+    user_note = text.replace(url, "").strip()
+
     logger.info(f"收到 X 链接: {url}")
+    if user_note:
+        logger.info(f"用户笔记: {user_note}")
 
     # 标记消息已处理（防止重复）
     mark_message_processed(message_id)
@@ -268,7 +276,7 @@ async def handle_event(request: Request):
 
     # 异步处理（避免飞书超时重试）
     try:
-        result = process_x_url(url)
+        result = process_x_url(url, user_note=user_note)
         send_reply(message_id, result)
     except Exception as e:
         logger.error(f"处理失败: {e}")

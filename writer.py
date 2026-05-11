@@ -67,6 +67,7 @@ def write_note(
     summary_data: dict,
     vault_path: str,
     replies: list[dict] = None,  # 评论数据
+    user_note: str = "",  # 用户发送链接时附带的笔记
     clippings_folder: str = "X-Clippings",
     attachments_folder: str = "attachments",
 ) -> str | None:
@@ -124,6 +125,11 @@ def write_note(
     parts.append("")
     parts.append(f"## 摘要\n{summary_data.get('summary_zh', '')}")
     parts.append("")
+
+    # 用户笔记
+    if user_note:
+        parts.append(f"## 笔记\n{user_note}")
+        parts.append("")
     parts.append(f"## 原文\n{tweet_data.get('text', '')}")
     parts.append("")
 
