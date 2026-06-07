@@ -1,5 +1,6 @@
 """飞书 Bot 主服务 — 接收消息、处理 X 链接、存入 Obsidian"""
 
+import asyncio
 import logging
 import os
 from collections import deque
@@ -14,8 +15,9 @@ from summarizer import summarize_tweet
 from writer import write_note
 from feishu_writer import save_to_feishu_doc
 
-# GitHub 同步（云端部署时使用）
-GITHUB_MODE = bool(os.environ.get("GITHUB_TOKEN"))
+# GitHub 同步模式：GITHUB_WRITE_MODE=1 时只写 GitHub（云端部署）
+# 设置 GITHUB_TOKEN 但不设 GITHUB_WRITE_MODE 时，仍写本地 + 可用 /sync
+GITHUB_MODE = bool(os.environ.get("GITHUB_WRITE_MODE"))
 if GITHUB_MODE:
     from github_writer import push_note
 
@@ -114,6 +116,37 @@ def add_reaction(message_id: str, reaction_type: str):
         logger.error(f"添加表情失败: {response.msg}")
     return response
     return response
+
+
+async def _handle_sync(message_id: str):
+    """处理 /sync 指令：查询 GitHub 同步状态"""
+    try:
+        from github_pull import get_sync_status
+
+        status = await asyncio.get_event_loop().run_in_executor(
+            None, get_sync_status
+        )
+
+        if "error" in status:
+            send_reply(message_id, f"❌ 查询失败: {status['error']}")
+            return
+
+        result = (
+            f"📊 GitHub 同步状态\n"
+            f"📝 笔记: {status['total_notes']} 篇\n"
+            f"🖼️ 附件: {status['total_attachments']} 个\n"
+            f"🕐 最新: {status['latest_date']}\n"
+            f"   {status['latest_msg']}"
+        )
+        if status.get("recent_notes"):
+            result += "\n\n📰 最近收录:"
+            for note in status["recent_notes"]:
+                result += f"\n  - {note}"
+
+        send_reply(message_id, result)
+    except Exception as e:
+        logger.error(f"状态查询失败: {e}", exc_info=True)
+        send_reply(message_id, f"❌ 查询失败: {e}")
 
 
 def process_x_url(url: str, retry_count: int = 0, max_retries: int = 3, user_note: str = "") -> str:
@@ -255,6 +288,14 @@ async def handle_event(request: Request):
     import json
     content = json.loads(message.get("content", "{}"))
     text = content.get("text", "")
+
+    # 检查是否为 /sync 指令
+    if text.strip() == "/sync":
+        mark_message_processed(message_id)
+        send_reply(message_id, "⏳ 正在查询同步状态...")
+        import asyncio
+        asyncio.ensure_future(_handle_sync(message_id))
+        return {"status": "ok"}
 
     # 检查是否包含 X URL
     url = is_x_url(text)
