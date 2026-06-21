@@ -2,7 +2,31 @@ services:
   - type: web
     name: x-to-obsidian
     env: docker
-    # 纯 Python 服务（使用 ntscraper 替代 xreach）
+    region: singapore  # 离国内最近的 Render 区域
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11
+        value: "3.11"
+      # 飞书凭据（来自 config.yaml，已硬编码也可用 env 覆盖）
+      - key: FEISHU_APP_ID
+        sync: false
+      - key: FEISHU_APP_SECRET
+        sync: false
+      - key: FEISHU_VERIFICATION_TOKEN
+        sync: false
+      - key: FEISHU_WIKI_SPACE_ID
+        sync: false
+      # AI 摘要
+      - key: DASHSCOPE_API_KEY
+        sync: false
+      # GitHub 同步（核心）
+      - key: GITHUB_WRITE_MODE
+        value: "1"
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_REPO
+        value: DMSaur/x-clippings
+      - key: GITHUB_BRANCH
+        value: main
