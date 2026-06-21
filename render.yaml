@@ -2,8 +2,8 @@ services:
   - type: web
     name: x-to-obsidian
     env: docker
-    region: singapore  # 离国内最近的 Render 区域
-    plan: free
+    region: frankfurt  # blueprint spec 仅支持 oregon / frankfurt；frankfurt 离国内稍近
+    plan: starter
     healthCheckPath: /health
     autoDeploy: true
     envVars:
